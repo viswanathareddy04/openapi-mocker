@@ -3,13 +3,19 @@ package com.openapi.mocker.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.javafaker.Faker;
+import com.openapi.mocker.parser.OpenAPIParserComponent;
+import io.swagger.models.Response;
 import io.swagger.v3.oas.models.OpenAPI;
 import io.swagger.v3.oas.models.Operation;
 import io.swagger.v3.oas.models.PathItem;
+import io.swagger.v3.oas.models.headers.Header;
+import io.swagger.v3.oas.models.links.Link;
 import io.swagger.v3.oas.models.media.Content;
 import io.swagger.v3.oas.models.media.MediaType;
 import io.swagger.v3.oas.models.media.Schema;
 import io.swagger.v3.oas.models.parameters.Parameter;
+import io.swagger.v3.oas.models.responses.ApiResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpMethod;
@@ -33,6 +39,12 @@ public class ApiController {
     private RestTemplate restTemplate;
 
     ObjectMapper objectMapper = new ObjectMapper();
+
+    @Autowired
+    OpenAPIParserComponent openApiParser;
+
+    @Autowired
+    Faker faker;
 
     @CrossOrigin(origins = "*", methods = {RequestMethod.GET, RequestMethod.POST, RequestMethod.PUT, RequestMethod.PATCH, RequestMethod.DELETE})
     @RequestMapping("/**")
@@ -60,7 +72,6 @@ public class ApiController {
 
             if (operation != null) {
                 // Check if requestBody is required
-                System.out.println(requestParams);
                 io.swagger.v3.oas.models.parameters.RequestBody openApiRequestBody = operation.getRequestBody();
                 if (openApiRequestBody != null && openApiRequestBody.getRequired()) {
                     if (requestBody == null || requestBody.isEmpty()) {
@@ -92,6 +103,42 @@ public class ApiController {
                         }
                     }
                 }
+
+
+                // handle the responses
+
+                String responseCode = "400";
+                ApiResponse response = operation.getResponses().get(responseCode);
+                if (response != null) {
+                    String description = response.getDescription();
+                    Map<String, Header> headers = response.getHeaders();
+                    Map<String, MediaType> content = response.getContent();
+                    Map<String, Link> links = response.getLinks();
+                    Map<String, Object> extensions = response.getExtensions();
+                    String ref = response.get$ref();
+
+                    if (ref != null) {
+                        String schemaName = ref.substring(ref.lastIndexOf('/') + 1);
+                        Schema<?> schema = openAPI.getComponents().getSchemas().get(schemaName);
+                        if (schema != null) {
+                            // Generate fake data based on the referenced schema
+                            Object fakeData = generateFakeData(schema);
+                        }
+                    }
+                    if (content!= null) {
+                        MediaType mediaType = content.get("application/json");
+                        if (mediaType != null) {
+                            Schema schema = mediaType.getSchema();
+                            if (schema != null) {
+
+                            }
+                        }
+                    }
+
+                }
+
+
+
                 // Check if required parameters exists
                 List<Parameter> parameters = operation.getParameters();
                 Map<String, String> requestHeaders = getHeadersAsMap(request);
@@ -155,6 +202,32 @@ public class ApiController {
         }
 
         return headersMap;
+    }
+
+    private Object generateFakeData(Schema<?> schema) {
+        if (schema.getType().equals("string")) {
+            return faker.lorem().sentence();
+        } else if (schema.getType().equals("integer")) {
+            return faker.number().randomNumber();
+        } else if (schema.getType().equals("boolean")) {
+            return faker.bool().bool();
+        } else if (schema.getType().equals("object")) {
+            Map<String, Object> fakeObject = new HashMap<>();
+            if (schema.getProperties() != null) {
+                for (Map.Entry<String, Schema> propertyEntry : schema.getProperties().entrySet()) {
+                    String propertyName = propertyEntry.getKey();
+                    Schema<?> propertySchema = propertyEntry.getValue();
+                    fakeObject.put(propertyName, generateFakeData(propertySchema));
+                }
+            }
+            return fakeObject;
+        } else if (schema.getType().equals("array")) {
+            // Generate fake data for array type schema
+            // You can recursively generate fake data for the items in the array schema
+            // Return the generated array
+        }
+
+        return null; // Default case
     }
 
 
